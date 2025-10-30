@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/jianxiong-cao/docker-auth/pkg/registry"
+	"github.com/docker-make/docker-mainifest/pkg/registry"
 )
 
 func BatchManifests() {

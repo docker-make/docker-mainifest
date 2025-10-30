@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/jianxiong-cao/docker-auth/pkg/registry"
+	"github.com/docker-make/docker-mainifest/pkg/registry"
 )
 
 // credentialsFlag 实现 flag.Value 接口，用于支持重复的 -credentials 参数

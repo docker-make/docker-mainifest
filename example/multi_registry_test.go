@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/jianxiong-cao/docker-auth/pkg/registry"
+	"github.com/docker-make/docker-mainifest/pkg/registry"
 )
 
 func MultiRegistryTest() {

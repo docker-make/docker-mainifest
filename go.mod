@@ -1,4 +1,4 @@
-module github.com/jianxiong-cao/docker-auth
+module github.com/docker-make/docker-mainifest
 
 go 1.21
 
