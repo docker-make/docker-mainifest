@@ -43,7 +43,7 @@ var (
 )
 
 // DetectRegistry 根据镜像名称检测使用哪个 registry
-// 返回 registry key
+// 返回 registry key，如果是未注册的自定义源，返回域名作为 key
 func DetectRegistry(image string) string {
 	// 如果镜像以 ghcr.io/ 开头，使用 GitHub Container Registry
 	if strings.HasPrefix(image, "ghcr.io/") {
@@ -65,6 +65,17 @@ func DetectRegistry(image string) string {
 					return key
 				}
 			}
+		}
+	}
+
+	// 检查是否为未注册的自定义源（包含域名）
+	if strings.Contains(image, "/") {
+		parts := strings.SplitN(image, "/", 2)
+		domain := parts[0]
+		// 如果第一部分包含点号，很可能是域名
+		if strings.Contains(domain, ".") {
+			// 返回域名作为 key，表示这是一个未注册的自定义源
+			return "custom:" + domain
 		}
 	}
 

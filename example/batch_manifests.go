@@ -37,7 +37,8 @@ func BatchManifests() {
 	// 定义要获取的镜像列表
 	// 注意：如果超过 30 个镜像，会自动分成多个批次
 	imageSpecs := []registry.ImageSpec{
-		{Image: "nginx", Tag: "latest"},
+		// {Image: "nginx", Tag: "latest"},
+		{Image: "lscr.io/linuxserver/phpmyadmin", Tag: "latest"},
 		{Image: "redis", Tag: "alpine"},
 		{Image: "postgres", Tag: "14"},
 		{Image: "mysql", Tag: "8.0"},
@@ -46,7 +47,7 @@ func BatchManifests() {
 		{Image: "ghcr.io/ofkm/arcane", Tag: "latest"},
 		{Image: "jianxcao/media302", Tag: "latest"},
 		// 可以添加 GHCR 镜像，会自动按 registry 类型分组
-		// {Image: "ghcr.io/owner/repo", Tag: "latest"},
+		{Image: "ghcr.io/owner/repo", Tag: "latest"},
 	}
 
 	fmt.Printf("准备获取 %d 个镜像的 manifest...\n\n", len(imageSpecs))
@@ -93,6 +94,13 @@ func printResults(results []registry.ManifestResult) {
 }
 
 func main() {
+	// 选择要运行的测试
+
 	BatchManifests()
+
+	// 测试2: 测试自定义镜像源（包含 lscr.io）
+	// TestCustomRegistry()
+
+	// 测试3: 添加自定义 registry
 	// AddCustomRegistry()
 }

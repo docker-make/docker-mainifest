@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"go.uber.org/zap"
 )
@@ -14,19 +15,58 @@ func (c *Client) GetManifestWithDigest(image, tag string) (manifest string, dige
 	// 检测 registry key
 	registryKey := DetectRegistry(image)
 
-	// 获取 registry 配置
-	config, ok := GetRegistry(registryKey)
-	if !ok {
-		return "", "", fmt.Errorf("未找到 registry 配置: %s", registryKey)
+	// 检查是否为未注册的自定义 registry
+	isCustomUnregistered := false
+	var customDomain string
+	if len(registryKey) > 7 && registryKey[:7] == "custom:" {
+		isCustomUnregistered = true
+		customDomain = registryKey[7:] // 提取域名
+		c.logger.Debug("检测到未注册的自定义源", zap.String("domain", customDomain))
 	}
 
-	// 规范化镜像名称
-	normalizedImage := NormalizeImageName(image, registryKey)
+	var config *RegistryConfig
+	var normalizedImage string
+	var token string
 
-	// 获取认证 token
-	token, err := c.getAuthToken(image, registryKey)
-	if err != nil {
-		return "", "", fmt.Errorf("获取认证 token 失败: %w", err)
+	if isCustomUnregistered {
+		// 对于未注册的自定义源，使用 WWW-Authenticate 流程
+		// 构建 registry URL
+		registryURL := "https://" + customDomain
+
+		// 规范化镜像名称（移除域名前缀）
+		parts := strings.SplitN(image, "/", 2)
+		if len(parts) == 2 {
+			normalizedImage = parts[1]
+		} else {
+			normalizedImage = image
+		}
+
+		// 通过 WWW-Authenticate 获取 token
+		token, err = c.getAuthTokenViaWWWAuthenticate(registryURL, normalizedImage)
+		if err != nil {
+			return "", "", fmt.Errorf("通过 WWW-Authenticate 获取认证 token 失败: %w", err)
+		}
+
+		// 使用临时配置
+		config = &RegistryConfig{
+			RegistryURL: registryURL,
+		}
+	} else {
+		// 对于已注册的 registry，使用标准流程
+		var ok bool
+		config, ok = GetRegistry(registryKey)
+		if !ok {
+			return "", "", fmt.Errorf("未找到 registry 配置: %s", registryKey)
+		}
+
+		// 规范化镜像名称
+		normalizedImage = NormalizeImageName(image, registryKey)
+
+		// 获取认证 token
+		token, err = c.getAuthToken(image, registryKey)
+		if err != nil {
+			return "", "", fmt.Errorf("获取认证 token 失败: %w", err)
+		}
 	}
 
 	// 构建 manifest URL

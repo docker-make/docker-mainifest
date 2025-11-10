@@ -261,3 +261,120 @@ func ParseWWWAuthenticate(header string) (realm, service, scope string, err erro
 
 	return realm, service, scope, nil
 }
+
+// getAuthTokenViaWWWAuthenticate 通过 WWW-Authenticate 动态获取认证 token
+// 用于未注册的自定义 registry
+func (c *Client) getAuthTokenViaWWWAuthenticate(registryURL, image string) (string, error) {
+	// 首先尝试访问 manifest 接口，不带认证
+	manifestURL := fmt.Sprintf("%s/v2/%s/manifests/latest", registryURL, image)
+
+	req, err := http.NewRequest("GET", manifestURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("创建探测请求失败: %w", err)
+	}
+
+	req.Header.Set("Accept", "application/vnd.docker.distribution.manifest.v2+json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("探测请求失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// 如果不是 401，说明不需要认证或有其他问题
+	if resp.StatusCode != http.StatusUnauthorized {
+		return "", fmt.Errorf("未预期的响应状态: %d", resp.StatusCode)
+	}
+
+	// 解析 WWW-Authenticate header
+	wwwAuth := resp.Header.Get("Www-Authenticate")
+	if wwwAuth == "" {
+		return "", fmt.Errorf("未找到 Www-Authenticate header")
+	}
+
+	realm, service, scope, err := ParseWWWAuthenticate(wwwAuth)
+	if err != nil {
+		return "", fmt.Errorf("解析 WWW-Authenticate 失败: %w", err)
+	}
+
+	c.logger.Debug("从 WWW-Authenticate 获取认证参数",
+		zap.String("realm", realm),
+		zap.String("service", service),
+		zap.String("scope", scope))
+
+	// 构建认证 URL
+	authURL := realm
+	params := url.Values{}
+	if service != "" {
+		params.Set("service", service)
+	}
+	if scope != "" {
+		params.Set("scope", scope)
+	}
+
+	if len(params) > 0 {
+		authURL += "?" + params.Encode()
+	}
+
+	// 请求 token
+	authReq, err := http.NewRequest("GET", authURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("创建认证请求失败: %w", err)
+	}
+
+	// 尝试添加凭据（如果有的话）
+	// 对于自定义源，尝试使用域名作为 key 查找凭据
+	domain := extractDomain(registryURL)
+	if cred, ok := c.GetCredential(domain); ok && cred.Username != "" && cred.Token != "" {
+		auth := cred.Username + ":" + cred.Token
+		encodedAuth := base64.StdEncoding.EncodeToString([]byte(auth))
+		authReq.Header.Set("Authorization", "Basic "+encodedAuth)
+	}
+
+	authResp, err := c.httpClient.Do(authReq)
+	if err != nil {
+		return "", fmt.Errorf("认证请求失败: %w", err)
+	}
+	defer authResp.Body.Close()
+
+	if authResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(authResp.Body)
+		return "", fmt.Errorf("认证失败 (状态码: %d): %s", authResp.StatusCode, string(body))
+	}
+
+	// 解析 token 响应
+	body, err := io.ReadAll(authResp.Body)
+	if err != nil {
+		return "", fmt.Errorf("读取认证响应失败: %w", err)
+	}
+
+	var tokenResp tokenResponse
+	if err := json.Unmarshal(body, &tokenResp); err != nil {
+		return "", fmt.Errorf("解析认证响应失败: %w", err)
+	}
+
+	// 返回 token
+	if tokenResp.Token != "" {
+		return tokenResp.Token, nil
+	}
+	if tokenResp.AccessToken != "" {
+		return tokenResp.AccessToken, nil
+	}
+
+	return "", fmt.Errorf("认证响应中没有找到 token")
+}
+
+// extractDomain 从 URL 中提取域名
+func extractDomain(urlStr string) string {
+	// 移除 https:// 或 http:// 前缀
+	urlStr = strings.TrimPrefix(urlStr, "https://")
+	urlStr = strings.TrimPrefix(urlStr, "http://")
+
+	// 获取域名部分
+	parts := strings.Split(urlStr, "/")
+	if len(parts) > 0 {
+		return parts[0]
+	}
+
+	return urlStr
+}
